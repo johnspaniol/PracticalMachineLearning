@@ -1,0 +1,99 @@
+---
+title: "Prediction Assignment Writeup"
+output: 
+  html_document: 
+    keep_md: yes
+---
+
+For this assignment we will analyze the provided data to determine what activity an individual performed. To do this we will make use of caret and randomForest, this will allow us to generate correct answers for each of the 20 test data cases provided after this assignment.
+
+
+```{r, message=FALSE}
+
+suppressWarnings(library(Hmisc))
+suppressWarnings(library(caret))
+suppressWarnings(library(randomForest))
+suppressWarnings(library(foreach))
+suppressWarnings(library(doParallel))
+
+```
+
+We will first load the data both from the provided training and test data provided 
+
+Some values contained a "#DIV/0!" that need to be replaced with an NA value.
+
+```{r}
+Training_Data <- read.csv("pml-training.csv", na.strings=c("#DIV/0!") )
+Eval_Data <- read.csv("pml-testing.csv", na.strings=c("#DIV/0!") )
+```
+
+```{r, message=FALSE,include=FALSE}
+suppressWarnings(for(i in c(8:ncol(Training_Data)-1)) {Training_Data[,i] = as.numeric(as.character(Training_Data[,i]))})
+
+suppressWarnings(for(i in c(8:ncol(Eval_Data)-1)) {Eval_Data[,i] = as.numeric(as.character(Eval_Data[,i]))})
+```
+
+Columns that were mostly blank did not contribute well to the prediction. We will remove those from the useful dataset and chose a dataset that only includes complete columns. 
+
+```{r}
+
+feature_set <- colnames(Training_Data[colSums(is.na(Training_Data)) == 0])[-(1:7)]
+model_data <- Training_Data[feature_set]
+
+idx <- createDataPartition(y=model_data$classe, p=0.75, list=FALSE )
+training <- model_data[idx,]
+testing <- model_data[-idx,]
+
+```
+
+We will now build 5 random forests with 150 trees each. We will make use of parallel processing to build this model.
+
+```{r}
+registerDoParallel()
+x <- training[-ncol(training)]
+y <- training$classe
+
+rf <- foreach(ntree=rep(150, 6), .combine=randomForest::combine, .packages='randomForest') %dopar% {
+randomForest(x, y, ntree=ntree) 
+}
+```
+
+Provide error reports for both training and test data.
+```{r}
+predictions1 <- predict(rf, newdata=training)
+confusionMatrix(predictions1,training$classe)
+
+
+predictions2 <- predict(rf, newdata=testing)
+confusionMatrix(predictions2,testing$classe)
+```
+
+Conclusions and Test Data Submit
+--------------------------------
+
+As can be seen from the confusion matrix this model is very accurate. I did experiment with PCA and other models, but it was not as accurate. The test data was approximately 99% accurate. I expected nearly all of the submitted test cases to be correct which turned out to be true.
+
+__The data for this project came from: http://groupware.les.inf.puc-rio.br/har __
+
+```{r,echo=FALSE}
+write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+```
+
+```{r}
+x <- Eval_Data
+x <- x[feature_set[feature_set!='classe']]
+answers <- predict(rf, newdata=x)
+
+answers
+```
+
+```{r, echo=FALSE}
+write_files(answers)
+```
